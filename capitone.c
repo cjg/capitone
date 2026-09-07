@@ -11,11 +11,17 @@
 
 #define MAXIMUM_CAPITONE_LENGTH ARENA_WIDTH * ARENA_HEIGHT
 
+#define UP    1
+#define DOWN  2
+#define LEFT  3
+#define RIGHT 4
+
 uint16_t arena[ARENA_WIDTH * ARENA_HEIGHT];
 uint8_t head_x;
 uint8_t head_y;
-uint8_t tail_x;
-uint8_t tail_y;
+uint16_t body_length;
+uint8_t direction;
+uint32_t last_move;
 
 #define arena_set(x, y, v) arena[(y) * ARENA_WIDTH + (x)] = (v)
 #define arena_get(x, y) arena[(y) * ARENA_WIDTH + (x)]
@@ -23,6 +29,8 @@ uint8_t tail_y;
 
 static void line(int tl_x, int tl_y, int br_x, int br_y, int color);
 static void draw_arena(void);
+static uint8_t move_capitone(uint8_t direction);
+static const char *uitoa(uint32_t x);
 
 void capitone_init(void) {
     prg32_console_write("Starting Capitone!\n");
@@ -34,14 +42,41 @@ void capitone_init(void) {
             arena[y * ARENA_WIDTH + x] = 0;
         }
     }
-    arena_set(head_x, head_y, 3);
-    arena_set(head_x - 1, head_y, 2);
-    arena_set(head_x - 2, head_y, 1);
-    tail_x = head_x - 2;
-    tail_y = head_y;
+    body_length = 3;
+    arena_set(head_x, head_y, body_length);
+    arena_set(head_x - 1, head_y, body_length - 1);
+    arena_set(head_x - 2, head_y, body_length - 2);
+    direction = RIGHT;
+    last_move = prg32_ticks_ms();
 }
 
 void capitone_update(void) {
+    uint32_t now = prg32_ticks_ms();
+
+    uint32_t current_input = prg32_input_read();
+
+    // up and down are valid change of direction only when moving to left or to right
+    // same idea for left and right
+    if (direction == LEFT || direction == RIGHT) {
+        if (current_input & PRG32_BTN_UP) {
+            direction = UP;
+        } else if (current_input & PRG32_BTN_DOWN) {
+            direction = DOWN;
+        }
+    } else {
+        if (current_input & PRG32_BTN_LEFT) {
+            direction = LEFT;
+        } else if (current_input & PRG32_BTN_RIGHT) {
+            direction = RIGHT;
+        }
+    }
+
+    if (now - last_move < 200) {
+        return;
+    }
+    prg32_console_write("Moving\n");
+    move_capitone(direction);
+    last_move = now;
 }
 
 void capitone_draw(void) {
@@ -100,4 +135,141 @@ static void draw_arena(void) {
             }
         }
     }
+}
+
+static uint8_t move_capitone(uint8_t direction) {
+    int x = head_x;
+    int y = head_y;
+
+    // first we move the head to the next location, we return 1 on collision
+    switch (direction)
+    {
+    case UP:
+        if (head_y == 0) {
+            return 1;
+        }
+        head_y -= 1;
+        break;
+    
+    case DOWN:
+        if (head_y + 1 == ARENA_HEIGHT) {
+            return 1;
+        } 
+        head_y += 1;
+        break;
+
+    case LEFT:
+        if (head_x == 0) {
+            return 1;
+        }
+        head_x -= 1;
+        break;
+    
+    case RIGHT:
+        if (head_x + 1 == ARENA_WIDTH) {
+            return 1;
+        } 
+        head_x += 1;
+        break;
+    }
+
+    arena_set(head_x, head_y, body_length);
+
+    uint16_t next_body_piece = body_length - 1;
+
+    prg32_console_write("head is at ");
+    prg32_console_write(uitoa(x));
+    prg32_console_putc(' ');
+    prg32_console_write(uitoa(y));
+    prg32_console_write("\n");
+
+    for (;next_body_piece != 0;) {
+        prg32_console_write("looking for body piece ");
+        prg32_console_write(uitoa(next_body_piece));
+        prg32_console_write(" around ");
+        prg32_console_write(uitoa(x));
+        prg32_console_putc(' ');
+        prg32_console_write(uitoa(y));
+        prg32_console_write("\n");
+        // let's find the position of the next piece, if not found it means we reached the head
+        int next_x = -1;
+        int next_y = -1;
+
+        // check top
+        if (y - 1 >= 0 && arena_get(x, y - 1) == next_body_piece) {
+            next_x = x;
+            next_y = y - 1;
+        } else {
+            prg32_console_write("value on top ");
+            prg32_console_write(uitoa(arena_get(x, y - 1)));
+            prg32_console_write("\n");
+        }
+
+        // check bottom
+        if (y + 1 < ARENA_HEIGHT && arena_get(x, y + 1) == next_body_piece) {
+            next_x = x;
+            next_y = y + 1;
+        }
+
+        // check right
+        if (x + 1 < ARENA_WIDTH && arena_get(x + 1, y) == next_body_piece) {
+            prg32_console_write("is on the right\n");
+            next_x = x + 1;
+            next_y = y;
+        }
+
+        // check left
+        if (x - 1 >= 0 && arena_get(x - 1, y) == next_body_piece) {
+            prg32_console_write("is on the left\n");
+            next_x = x - 1;
+            next_y = y;
+        }
+
+        // we found the next piece
+        if (next_x >= 0) {
+            arena_set(x, y, next_body_piece);
+            x = next_x;
+            y = next_y;
+            next_body_piece = next_body_piece - 1;
+            if (next_body_piece == 0) {
+                arena_set(x, y, 0);
+            }
+        } else {
+            prg32_console_write("body piece not found ");
+            prg32_console_hex32((uint32_t) next_body_piece);
+            prg32_console_putc('\n');
+        }
+    }
+}
+
+static const char *uitoa(uint32_t x) {
+    static char s[12];
+
+    if (x == 0) {
+        s[0] = '0';
+        s[1] = 0;
+        return s;
+    }
+
+    int i = 0;
+    while (x != 0) {
+        int rem = x % 10;
+        s[i++] = rem + '0';
+        x = x / 10;
+    }
+    
+    s[i] = 0;
+    
+    /* Reverse the string */
+    int start = 0;
+    int end = i - 1;
+    while (start < end) {
+        char temp = s[start];
+        s[start] = s[end];
+        s[end] = temp;
+        start++;
+        end--;
+    }
+
+    return s;
 }
