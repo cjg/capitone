@@ -5,23 +5,27 @@
 
 #define WALL_COLOR PRG32_COLOR_GREEN
 #define BODY_COLOR PRG32_COLOR_RED
+#define FOOD_COLOR PRG32_COLOR_CYAN
 
 #define ARENA_WIDTH  ((PRG32_GAME_W - 4 * SCALE) / SCALE)
 #define ARENA_HEIGHT ((PRG32_GAME_H - 4 * SCALE) / SCALE)
 
 #define MAXIMUM_CAPITONE_LENGTH ARENA_WIDTH * ARENA_HEIGHT
 
-#define UP    1
-#define DOWN  2
-#define LEFT  3
-#define RIGHT 4
+#define UP    'U'
+#define DOWN  'D'
+#define LEFT  'L'
+#define RIGHT 'R'
 
 uint16_t arena[ARENA_WIDTH * ARENA_HEIGHT];
 uint8_t head_x;
 uint8_t head_y;
 uint16_t body_length;
 uint8_t direction;
+uint8_t direction_change;
 uint32_t last_move;
+uint8_t food_x;
+uint8_t food_y;
 
 #define arena_set(x, y, v) arena[(y) * ARENA_WIDTH + (x)] = (v)
 #define arena_get(x, y) arena[(y) * ARENA_WIDTH + (x)]
@@ -31,6 +35,7 @@ static void line(int tl_x, int tl_y, int br_x, int br_y, int color);
 static void draw_arena(void);
 static uint8_t move_capitone(uint8_t direction);
 static const char *uitoa(uint32_t x);
+static void add_food(void);
 
 void capitone_init(void) {
     prg32_console_write("Starting Capitone!\n");
@@ -47,6 +52,9 @@ void capitone_init(void) {
     arena_set(head_x - 1, head_y, body_length - 1);
     arena_set(head_x - 2, head_y, body_length - 2);
     direction = RIGHT;
+    food_x = ARENA_WIDTH;
+    food_y = ARENA_HEIGHT;
+    direction_change = 0;
     last_move = prg32_ticks_ms();
 }
 
@@ -55,26 +63,38 @@ void capitone_update(void) {
 
     uint32_t current_input = prg32_input_read();
 
-    // up and down are valid change of direction only when moving to left or to right
-    // same idea for left and right
-    if (direction == LEFT || direction == RIGHT) {
-        if (current_input & PRG32_BTN_UP) {
-            direction = UP;
-        } else if (current_input & PRG32_BTN_DOWN) {
-            direction = DOWN;
-        }
-    } else {
-        if (current_input & PRG32_BTN_LEFT) {
-            direction = LEFT;
-        } else if (current_input & PRG32_BTN_RIGHT) {
-            direction = RIGHT;
-        }
+    if (current_input & PRG32_BTN_UP) {
+        direction_change = UP;
+    } else if (current_input & PRG32_BTN_DOWN) {
+        direction_change = DOWN;
+    } else if (current_input & PRG32_BTN_LEFT) {
+        direction_change = LEFT;
+    } else if (current_input & PRG32_BTN_RIGHT) {
+        direction_change = RIGHT;
+    }
+
+    if (food_x >= ARENA_WIDTH || food_y >= ARENA_HEIGHT) {
+        add_food();
     }
 
     if (now - last_move < 200) {
+        prg32_console_write("<<< UPDATE\n");
         return;
     }
-    prg32_console_write("Moving\n");
+
+    // up and down are valid change of direction only when moving to left or to right
+    // same idea for left and right        
+    if (direction == LEFT || direction == RIGHT) {
+        if (direction_change == UP || direction_change == DOWN) {
+            direction = direction_change;
+        }
+    } else {
+        if (direction_change == LEFT || direction_change == RIGHT) {
+            direction = direction_change;
+        }
+    }
+    direction_change = 0;
+
     move_capitone(direction);
     last_move = now;
 }
@@ -94,6 +114,10 @@ void capitone_draw(void) {
     line(wall_tl_x, wall_br_y, wall_tl_x, wall_tl_y, WALL_COLOR+3);
 
     draw_arena();
+
+    if (food_x < ARENA_WIDTH && food_y < ARENA_HEIGHT) {
+        prg32_gfx_rect(food_x * SCALE, food_y * SCALE, SCALE, SCALE, FOOD_COLOR);
+    }
 }
 
 static void line(int start_x, int start_y, int end_x, int end_y, int color) {
@@ -177,20 +201,7 @@ static uint8_t move_capitone(uint8_t direction) {
 
     uint16_t next_body_piece = body_length - 1;
 
-    prg32_console_write("head is at ");
-    prg32_console_write(uitoa(x));
-    prg32_console_putc(' ');
-    prg32_console_write(uitoa(y));
-    prg32_console_write("\n");
-
     for (;next_body_piece != 0;) {
-        prg32_console_write("looking for body piece ");
-        prg32_console_write(uitoa(next_body_piece));
-        prg32_console_write(" around ");
-        prg32_console_write(uitoa(x));
-        prg32_console_putc(' ');
-        prg32_console_write(uitoa(y));
-        prg32_console_write("\n");
         // let's find the position of the next piece, if not found it means we reached the head
         int next_x = -1;
         int next_y = -1;
@@ -199,10 +210,6 @@ static uint8_t move_capitone(uint8_t direction) {
         if (y - 1 >= 0 && arena_get(x, y - 1) == next_body_piece) {
             next_x = x;
             next_y = y - 1;
-        } else {
-            prg32_console_write("value on top ");
-            prg32_console_write(uitoa(arena_get(x, y - 1)));
-            prg32_console_write("\n");
         }
 
         // check bottom
@@ -213,14 +220,12 @@ static uint8_t move_capitone(uint8_t direction) {
 
         // check right
         if (x + 1 < ARENA_WIDTH && arena_get(x + 1, y) == next_body_piece) {
-            prg32_console_write("is on the right\n");
             next_x = x + 1;
             next_y = y;
         }
 
         // check left
         if (x - 1 >= 0 && arena_get(x - 1, y) == next_body_piece) {
-            prg32_console_write("is on the left\n");
             next_x = x - 1;
             next_y = y;
         }
@@ -236,7 +241,13 @@ static uint8_t move_capitone(uint8_t direction) {
             }
         } else {
             prg32_console_write("body piece not found ");
-            prg32_console_hex32((uint32_t) next_body_piece);
+            prg32_console_write(uitoa(next_body_piece));
+            prg32_console_write(" around ");
+            prg32_console_write(uitoa(x));
+            prg32_console_putc(' ');
+            prg32_console_write(uitoa(y));
+            prg32_console_write(" direction ");
+            prg32_console_putc(direction);
             prg32_console_putc('\n');
         }
     }
@@ -272,4 +283,16 @@ static const char *uitoa(uint32_t x) {
     }
 
     return s;
+}
+
+static void add_food(void) {
+    do {
+        food_x = prg32_random_number(0, ARENA_WIDTH-1);
+        food_y = prg32_random_number(0, ARENA_HEIGHT-1);
+        prg32_console_write("added food ");
+        prg32_console_write(uitoa(food_x));
+        prg32_console_putc(' ');
+        prg32_console_write(uitoa(food_y));
+        prg32_console_putc('\n');
+    } while (arean_is_body(food_x, food_y));   
 }
