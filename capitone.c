@@ -31,11 +31,11 @@ uint8_t food_x;
 uint8_t food_y;
 
 static void line(int tl_x, int tl_y, int br_x, int br_y, int color);
-static void draw_arena(void);
+static void draw_body(void);
 static uint8_t move_capitone(uint8_t direction);
 static const char *uitoa(uint32_t x);
 static void add_food(void);
-static uint8_t is_body();
+static uint8_t is_body(uint8_t x, uint8_t y);
 
 void capitone_init(void) {
     prg32_console_write("Starting Capitone!\n");
@@ -75,7 +75,6 @@ void capitone_update(void) {
     }
 
     if (now - last_move < 200) {
-        prg32_console_write("<<< UPDATE\n");
         return;
     }
 
@@ -110,7 +109,7 @@ void capitone_draw(void) {
     line(wall_br_x, wall_br_y, wall_tl_x, wall_br_y, WALL_COLOR+2);
     line(wall_tl_x, wall_br_y, wall_tl_x, wall_tl_y, WALL_COLOR+3);
 
-    draw_arena();
+    draw_body();
 
     if (food_x < ARENA_WIDTH && food_y < ARENA_HEIGHT) {
         prg32_gfx_rect(food_x * SCALE, food_y * SCALE, SCALE, SCALE, FOOD_COLOR);
@@ -241,10 +240,17 @@ static void add_food(void) {
 
 static uint8_t is_body(uint8_t x, uint8_t y) {
     int i;
-    for (i = 0 < body_length; i++) {
+    for (i = 0; i < body_length; i++) {
         if (body_xs[i] == x && body_ys[i] == y) {
             return 1;
         }
     }
     return 0;
+}
+
+static void draw_body(void) {
+    int i;
+    for (i = 0; i < body_length; i++) {
+        prg32_gfx_rect(body_xs[i] * SCALE, body_ys[i] * SCALE, SCALE, SCALE, BODY_COLOR);
+    }
 }
