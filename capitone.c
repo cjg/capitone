@@ -32,7 +32,7 @@ uint8_t food_y;
 
 static void line(int tl_x, int tl_y, int br_x, int br_y, int color);
 static void draw_body(void);
-static uint8_t move_capitone(uint8_t direction);
+static uint8_t move_capitone(uint8_t direction, uint8_t grow);
 static const char *uitoa(uint32_t x);
 static void add_food(void);
 static uint8_t is_body(uint8_t x, uint8_t y);
@@ -74,8 +74,21 @@ void capitone_update(void) {
         add_food();
     }
 
-    if (now - last_move < 200) {
+    if (now - last_move < 100) {
         return;
+    }
+
+    // let's check if it reached the food
+    uint8_t eating_the_food = 0;
+    if (direction == UP && head_x() == food_x && head_y() == food_y + 1) {
+        // going up, food just above head
+        eating_the_food = 1;
+    } else if (direction == DOWN && head_x() == food_x && head_y() == food_y - 1) {
+        eating_the_food = 1;
+    } else if (direction == LEFT && head_x() == food_x + 1 && head_y() == food_y) {
+        eating_the_food = 1;
+    } else if (direction == RIGHT && head_x() == food_x - 1 && head_y() == food_y) {
+        eating_the_food = 1;
     }
 
     // up and down are valid change of direction only when moving to left or to right
@@ -91,7 +104,15 @@ void capitone_update(void) {
     }
     direction_change = 0;
 
-    move_capitone(direction);
+    move_capitone(direction, eating_the_food);
+
+    if (eating_the_food) {
+        food_x = -1;
+        food_y = -1;
+    }
+    // TODO: handle collisions
+
+
     last_move = now;
 }
 
@@ -112,7 +133,7 @@ void capitone_draw(void) {
     draw_body();
 
     if (food_x < ARENA_WIDTH && food_y < ARENA_HEIGHT) {
-        prg32_gfx_rect(food_x * SCALE, food_y * SCALE, SCALE, SCALE, FOOD_COLOR);
+        prg32_gfx_rect(2 * SCALE + food_x * SCALE, 2 * SCALE+food_y * SCALE, SCALE, SCALE, FOOD_COLOR);
     }
 }
 
@@ -145,9 +166,15 @@ static void line(int start_x, int start_y, int end_x, int end_y, int color) {
     }
 }
 
-static uint8_t move_capitone(uint8_t direction) {
+static uint8_t move_capitone(uint8_t direction, uint8_t grow) {
     int previous_x = head_x();
     int previous_y = head_y();
+
+    if (grow) {
+        body_length += 1;
+        head_x() = previous_x;
+        head_y() = previous_y;
+    }
 
     // first we move the head to the next location, we return 1 on collision
     switch (direction)
@@ -179,6 +206,10 @@ static uint8_t move_capitone(uint8_t direction) {
         } 
         head_x() += 1;
         break;
+    }
+
+    if (grow) {
+        return 0;
     }
 
     int i;
@@ -251,6 +282,6 @@ static uint8_t is_body(uint8_t x, uint8_t y) {
 static void draw_body(void) {
     int i;
     for (i = 0; i < body_length; i++) {
-        prg32_gfx_rect(body_xs[i] * SCALE, body_ys[i] * SCALE, SCALE, SCALE, BODY_COLOR);
+        prg32_gfx_rect(2 * SCALE + body_xs[i] * SCALE, 2 * SCALE + body_ys[i] * SCALE, SCALE, SCALE, BODY_COLOR);
     }
 }
